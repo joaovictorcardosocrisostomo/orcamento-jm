@@ -232,6 +232,11 @@ private fun TelaAjustes(aoSair: () -> Unit) {
     OutlinedButton(onClick = { pegarAssinatura.launch("image/*") }) {
         Text(if (temAssinatura) "Trocar assinatura" else "Escolher foto da assinatura")
     }
+    if (Extrator.modeloDisponivel(ctx)) {
+        TextButton(onClick = {
+            escopo.launch { Extrator.esquecerModelo(ctx); aviso = "Modelo removido. Selecione o novo na tela principal." }
+        }) { Text("Trocar modelo da IA") }
+    }
     if (aviso.isNotBlank()) Text(aviso, style = MaterialTheme.typography.bodySmall)
     Spacer(Modifier.padding(4.dp))
     Button(onClick = { Ajustes.salvar(ctx, e); aoSair() }, modifier = Modifier.fillMaxWidth()) { Text("Salvar") }

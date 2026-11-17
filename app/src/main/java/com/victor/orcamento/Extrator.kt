@@ -39,6 +39,14 @@ object Extrator {
     fun modeloDisponivel(ctx: Context): Boolean =
         arquivoModelo(ctx).let { it.exists() && it.length() > 50_000_000 }
 
+    /** Apaga o modelo atual para escolher outro (ex.: trocar Q4 por Q8). */
+    suspend fun esquecerModelo(ctx: Context) = withContext(Dispatchers.Default) {
+        trava.withLock {
+            if (carregado) { LlamaBridge.shutdown(); carregado = false }
+            arquivoModelo(ctx).delete()
+        }
+    }
+
     /** Copia o .gguf escolhido pelo usuário para dentro do app (uma vez só). */
     suspend fun importarModelo(ctx: Context, uri: Uri) = withContext(Dispatchers.IO) {
         val destino = arquivoModelo(ctx)
@@ -129,6 +137,8 @@ object Extrator {
     private val reEmail = Regex("""[\w.+-]+@[\w-]+\.[\w.]+""")
 
     fun montar(mensagem: String, j: JSONObject): Orcamento {
+        // Troca o que a IA escreveu pelo trecho igual da mensagem (corrige acentos trocados)
+        fun t(chave: String) = Corretor.alinhar(mensagem, texto(j, chave))
         // Valor: o que estiver escrito "R$ ..." na mensagem vale mais que a IA
         val valorRegex = reValor.findAll(mensagem)
             .mapNotNull { Dinheiro.paraNumero(it.groupValues[1]) }
@@ -140,16 +150,16 @@ object Extrator {
             ?: reCpf.find(mensagem)?.value
             ?: texto(j, "cnpj_cpf")
 
-        val contato = texto(j, "contato").ifBlank {
+        val contato = t("contato").ifBlank {
             listOfNotNull(reFone.find(mensagem)?.value, reEmail.find(mensagem)?.value).joinToString(" / ")
         }
 
-        var cliente = texto(j, "cliente")
+        var cliente = t("cliente").ifBlank { Corretor.clientePorRegra(mensagem) }
         if (documento.isNotBlank()) cliente = cliente.replace(documento, "")
         cliente = cliente.replace(Regex("""[(,/\s]*(CNPJ|CPF)\s*:?\s*\)?\s*$""", RegexOption.IGNORE_CASE), "")
             .trim(' ', ',', '.', '(', ')')
 
-        val obs = listOf(texto(j, "forma_pagamento"), texto(j, "observacoes"))
+        val obs = listOf(t("forma_pagamento"), t("observacoes"))
             .filter { it.isNotBlank() }
             .map { frase(it) }
             .distinct()
@@ -159,10 +169,11 @@ object Extrator {
         return Orcamento(
             cliente = cliente,
             documento = documento.trim(),
-            endereco = texto(j, "endereco").trim(' ', ',', '.'),
+            endereco = t("endereco").trim(' ', ',', '.'),
             contato = contato,
-            descricao = frase(texto(j, "descricao_servico")),
-            itens = lista(j, "itens").joinToString("\n") { maiuscula(it.trim(' ', ',', '.', '\'', '"')) },
+            descricao = frase(t("descricao_servico")),
+            itens = Corretor.separarItens(lista(j, "itens").map { Corretor.alinhar(mensagem, it) })
+                .joinToString("\n") { maiuscula(it.trim(' ', ',', '.', '\'', '"')) },
             valor = valor,
             observacoes = obs,
         )
