@@ -105,6 +105,16 @@ private fun TelaPrincipal(textoRecebido: MutableState<String?>, abrirAjustes: ()
     var aviso by remember { mutableStateOf("") }
     var modeloOk by remember { mutableStateOf(Extrator.modeloDisponivel(ctx)) }
 
+    LaunchedEffect(Unit) {
+        if (!modeloOk) {
+            ocupado = true; aviso = "Preparando a IA (só na primeira vez, leva alguns segundos)…"
+            aviso = try {
+                if (Extrator.prepararEmbutido(ctx)) { modeloOk = true; "IA pronta." } else ""
+            } catch (e: Exception) { "Erro ao preparar a IA: ${e.message}" }
+            ocupado = false
+        }
+    }
+
     LaunchedEffect(textoRecebido.value) {
         textoRecebido.value?.let { mensagem = it; textoRecebido.value = null }
     }

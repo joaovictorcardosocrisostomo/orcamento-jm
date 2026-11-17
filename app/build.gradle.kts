@@ -39,6 +39,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { compose = true }
+    // o modelo vai sem compressão: abre mais rápido e o build não perde tempo comprimindo 400 MB
+    androidResources { noCompress += listOf("gguf") }
 }
 
 dependencies {

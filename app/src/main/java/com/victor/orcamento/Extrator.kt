@@ -39,6 +39,24 @@ object Extrator {
     fun modeloDisponivel(ctx: Context): Boolean =
         arquivoModelo(ctx).let { it.exists() && it.length() > 50_000_000 }
 
+    /**
+     * Na primeira vez, copia o modelo que vem dentro do APK para a pasta do app
+     * (o llama.cpp precisa de um arquivo de verdade). Devolve true se copiou.
+     */
+    suspend fun prepararEmbutido(ctx: Context): Boolean = withContext(Dispatchers.IO) {
+        val prefs = ctx.getSharedPreferences("ia", Context.MODE_PRIVATE)
+        if (modeloDisponivel(ctx) || prefs.getBoolean("embutidoCopiado", false)) return@withContext false
+        if (ctx.assets.list("")?.contains("nuextract.gguf") != true) return@withContext false
+        val temp = File(ctx.filesDir, "nuextract.tmp")
+        ctx.assets.open("nuextract.gguf").use { entrada ->
+            temp.outputStream().use { saida -> entrada.copyTo(saida, 1 shl 20) }
+        }
+        arquivoModelo(ctx).delete()
+        if (!temp.renameTo(arquivoModelo(ctx))) error("Não consegui preparar o modelo")
+        prefs.edit().putBoolean("embutidoCopiado", true).apply()
+        true
+    }
+
     /** Apaga o modelo atual para escolher outro (ex.: trocar Q4 por Q8). */
     suspend fun esquecerModelo(ctx: Context) = withContext(Dispatchers.Default) {
         trava.withLock {
