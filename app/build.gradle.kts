@@ -18,11 +18,20 @@ android {
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
+    // Chave fixa: assim cada versão nova instala por cima da anterior
+    signingConfigs {
+        create("fixa") {
+            storeFile = file("assinatura.jks")
+            storePassword = "orcamentojm"
+            keyAlias = "orcamento"
+            keyPassword = "orcamentojm"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            // assina com a chave de debug para facilitar instalar o APK direto no celular
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("fixa")
         }
     }
     compileOptions {
