@@ -21,21 +21,6 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - uses: actions/cache@v4
-        with:
-          path: app/src/main/assets/nuextract.gguf
-          key: nuextract-1.5-tiny-q4km-mradermacher
-
-      - name: Baixar modelo NuExtract (vai dentro do APK)
-        run: |
-          mkdir -p app/src/main/assets
-          if [ ! -s app/src/main/assets/nuextract.gguf ]; then
-            curl -L --fail --retry 3 -o app/src/main/assets/nuextract.gguf \
-              https://huggingface.co/mradermacher/NuExtract-1.5-tiny-GGUF/resolve/main/NuExtract-1.5-tiny.Q4_K_M.gguf
-          fi
-          echo "3c86a4fcb41c783d77f49ea0aa64c28ddf069f3966d661599c5b2e76e06cc188  app/src/main/assets/nuextract.gguf" | sha256sum -c -
-          ls -la app/src/main/assets
-
       - name: Compilar APK
         run: |
           chmod +x gradlew

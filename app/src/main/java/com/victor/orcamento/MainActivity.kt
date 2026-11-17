@@ -42,7 +42,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -105,14 +107,13 @@ private fun TelaPrincipal(textoRecebido: MutableState<String?>, abrirAjustes: ()
     var aviso by remember { mutableStateOf("") }
     var modeloOk by remember { mutableStateOf(Extrator.modeloDisponivel(ctx)) }
 
+    // Primeira abertura: baixa a IA sozinho
     LaunchedEffect(Unit) {
-        if (!modeloOk) {
-            ocupado = true; aviso = "Preparando a IA (só na primeira vez, leva alguns segundos)…"
-            aviso = try {
-                if (Extrator.prepararEmbutido(ctx)) { modeloOk = true; "IA pronta." } else ""
-            } catch (e: Exception) { "Erro ao preparar a IA: ${e.message}" }
-            ocupado = false
-        }
+        if (!modeloOk && Extrator.deveBaixarSozinho(ctx)) Baixador.iniciar(ctx)
+    }
+    // Quando o download termina, confere se o modelo chegou
+    LaunchedEffect(Baixador.progresso) {
+        if (Baixador.progresso == null) modeloOk = Extrator.modeloDisponivel(ctx)
     }
 
     LaunchedEffect(textoRecebido.value) {
@@ -138,9 +139,19 @@ private fun TelaPrincipal(textoRecebido: MutableState<String?>, abrirAjustes: ()
     if (!modeloOk) {
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Primeira vez: baixe o arquivo NuExtract-1.5-tiny-Q4_K_M.gguf no celular e selecione aqui. Sem ele, o app só preenche valor e CNPJ.")
-                OutlinedButton(onClick = { escolherModelo.launch(arrayOf("*/*")) }, enabled = !ocupado) {
-                    Text("Selecionar modelo (.gguf)")
+                val p = Baixador.progresso
+                if (p != null) {
+                    Text("Baixando a IA… ${(p * 100).toInt()}% de ${Extrator.MB_MODELO} MB. Só na primeira vez; deixe o app aberto.")
+                    LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth())
+                } else {
+                    Text("A IA ainda não está no celular (${Extrator.MB_MODELO} MB, baixa uma vez só). Sem ela, o app só preenche valor e CNPJ.")
+                    if (Baixador.erro.isNotBlank()) Text(Baixador.erro, color = MaterialTheme.colorScheme.error)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { Baixador.iniciar(ctx) }, enabled = !ocupado) { Text("Baixar IA") }
+                        OutlinedButton(onClick = { escolherModelo.launch(arrayOf("*/*")) }, enabled = !ocupado) {
+                            Text("Tenho o .gguf")
+                        }
+                    }
                 }
             }
         }
@@ -261,6 +272,26 @@ private fun Campo(rotulo: String, valor: String, linhas: Int = 1, aoMudar: (Stri
         minLines = linhas,
         modifier = Modifier.fillMaxWidth(),
     )
+}
+
+/** Download do modelo fora da tela, para não parar ao abrir os Ajustes. */
+object Baixador {
+    var progresso by mutableStateOf<Float?>(null)   // null = não está baixando
+        private set
+    var erro by mutableStateOf("")
+        private set
+    private val escopo = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    fun iniciar(ctx: Context) {
+        if (progresso != null) return
+        val app = ctx.applicationContext
+        progresso = 0f; erro = ""
+        escopo.launch {
+            try { Extrator.baixarModelo(app) { progresso = it } }
+            catch (e: Exception) { erro = "Não deu para baixar: ${e.message}. Toque em Baixar IA para continuar de onde parou." }
+            finally { progresso = null }
+        }
+    }
 }
 
 private fun compartilhar(ctx: Context, pdf: File) {
