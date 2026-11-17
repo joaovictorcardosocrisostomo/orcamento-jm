@@ -50,15 +50,6 @@ object Extrator {
         if (!temp.renameTo(destino)) error("Não consegui salvar o modelo")
     }
 
-    // Mesmo molde como JSON Schema: o llama.cpp só deixa o modelo escrever JSON válido com essas chaves
-    private const val ESQUEMA = """{"type":"object","properties":{
-"cliente":{"type":"string"},"cnpj_cpf":{"type":"string"},"endereco":{"type":"string"},
-"contato":{"type":"string"},"descricao_servico":{"type":"string"},
-"itens":{"type":"array","items":{"type":"string"}},
-"valor_total":{"type":"string"},"forma_pagamento":{"type":"string"},"observacoes":{"type":"string"}},
-"required":["cliente","cnpj_cpf","endereco","contato","descricao_servico","itens","valor_total","forma_pagamento","observacoes"],
-"additionalProperties":false}"""
-
     /** Última resposta crua do modelo (aparece na tela se nada for preenchido). */
     @Volatile var ultimaResposta: String = ""
         private set
@@ -69,7 +60,7 @@ object Extrator {
                 if (!carregado) {
                     LlamaBridge.updateGenerateParams(
                         temperature = 0f,      // NuExtract deve rodar sem aleatoriedade
-                        maxTokens = 700,
+                        maxTokens = 450,
                         topP = 1f,
                         topK = 1,
                         repeatPenalty = 1f,    // ele copia trechos do texto; não penalizar repetição
@@ -82,7 +73,7 @@ object Extrator {
                     carregado = LlamaBridge.initGenerateModel(arquivoModelo(ctx).absolutePath)
                     if (!carregado) error("Não consegui carregar o modelo")
                 }
-                LlamaBridge.generateJson(prompt(mensagem), ESQUEMA)
+                LlamaBridge.generate(prompt(mensagem))
             }
             ultimaResposta = bruto
             lerJson(bruto)
