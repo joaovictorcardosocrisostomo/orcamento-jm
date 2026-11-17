@@ -146,7 +146,12 @@ private fun TelaPrincipal(textoRecebido: MutableState<String?>, abrirAjustes: ()
         onClick = {
             escopo.launch {
                 ocupado = true; aviso = "Lendo a mensagem…"
-                aviso = try { orc = Extrator.extrair(ctx, mensagem); "Confira os campos antes de gerar." }
+                aviso = try {
+                    orc = Extrator.extrair(ctx, mensagem)
+                    if (orc.cliente.isBlank() && orc.descricao.isBlank())
+                        "A IA não preencheu. Resposta dela: " + Extrator.ultimaResposta.take(400).ifBlank { "(vazia)" }
+                    else "Confira os campos antes de gerar."
+                }
                 catch (e: Exception) { "Erro: ${e.message}" }
                 ocupado = false
             }

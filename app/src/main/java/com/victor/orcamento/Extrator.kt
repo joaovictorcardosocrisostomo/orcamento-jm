@@ -50,6 +50,19 @@ object Extrator {
         if (!temp.renameTo(destino)) error("Não consegui salvar o modelo")
     }
 
+    // Mesmo molde como JSON Schema: o llama.cpp só deixa o modelo escrever JSON válido com essas chaves
+    private const val ESQUEMA = """{"type":"object","properties":{
+"cliente":{"type":"string"},"cnpj_cpf":{"type":"string"},"endereco":{"type":"string"},
+"contato":{"type":"string"},"descricao_servico":{"type":"string"},
+"itens":{"type":"array","items":{"type":"string"}},
+"valor_total":{"type":"string"},"forma_pagamento":{"type":"string"},"observacoes":{"type":"string"}},
+"required":["cliente","cnpj_cpf","endereco","contato","descricao_servico","itens","valor_total","forma_pagamento","observacoes"],
+"additionalProperties":false}"""
+
+    /** Última resposta crua do modelo (aparece na tela se nada for preenchido). */
+    @Volatile var ultimaResposta: String = ""
+        private set
+
     suspend fun extrair(ctx: Context, mensagem: String): Orcamento = withContext(Dispatchers.Default) {
         val json = if (modeloDisponivel(ctx)) {
             val bruto = trava.withLock {
@@ -69,8 +82,9 @@ object Extrator {
                     carregado = LlamaBridge.initGenerateModel(arquivoModelo(ctx).absolutePath)
                     if (!carregado) error("Não consegui carregar o modelo")
                 }
-                LlamaBridge.generate(prompt(mensagem))
+                LlamaBridge.generateJson(prompt(mensagem), ESQUEMA)
             }
+            ultimaResposta = bruto
             lerJson(bruto)
         } else {
             JSONObject() // sem modelo: só as regras abaixo
@@ -78,15 +92,41 @@ object Extrator {
         montar(mensagem, json)
     }
 
+    /**
+     * Formato do NuExtract. A Llamatik embrulha qualquer prompt num formato de chat
+     * (que o NuExtract não entende), a menos que o texto contenha "user\n".
+     * Por isso a primeira linha é "user": assim o prompt vai cru para o modelo.
+     */
     private fun prompt(texto: String) =
-        "<|input|>\n### Template:\n$MOLDE\n### Text:\n${texto.trim()}\n\n<|output|>"
+        "user\n<|input|>\n### Template:\n$MOLDE\n### Text:\n${texto.trim()}\n\n<|output|>"
 
+    /** Pega o primeiro objeto JSON completo (contando chaves, ignorando as que estão dentro de textos). */
     private fun lerJson(bruto: String): JSONObject {
-        val depois = bruto.substringAfterLast("<|output|>")
-        val ini = depois.indexOf('{')
-        val fim = depois.lastIndexOf('}')
-        if (ini < 0 || fim <= ini) return JSONObject()
-        return try { JSONObject(depois.substring(ini, fim + 1)) } catch (e: Exception) { JSONObject() }
+        val t = bruto.substringAfterLast("<|output|>")
+        val ini = t.indexOf('{')
+        if (ini < 0) return JSONObject()
+        var nivel = 0
+        var emTexto = false
+        var escape = false
+        for (i in ini until t.length) {
+            val c = t[i]
+            if (emTexto) {
+                when {
+                    escape -> escape = false
+                    c == '\\' -> escape = true
+                    c == '"' -> emTexto = false
+                }
+                continue
+            }
+            when (c) {
+                '"' -> emTexto = true
+                '{' -> nivel++
+                '}' -> if (--nivel == 0) {
+                    return try { JSONObject(t.substring(ini, i + 1)) } catch (e: Exception) { JSONObject() }
+                }
+            }
+        }
+        return JSONObject()
     }
 
     // ---------- regras fixas ----------
